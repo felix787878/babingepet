@@ -1,18 +1,18 @@
 <?php
 
-namespace App\Models; // Pastikan namespace ini benar
+namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Str; // Pastikan ini di-import
+use Illuminate\Support\Str; 
+use Carbon\Carbon; // Untuk casting tanggal
 
 class UkmOrmawa extends Model
 {
     use HasFactory;
 
-    // Pastikan 'slug' dan 'misi' ada di sini
     protected $fillable = [
-        'pengurus_id', // Tambahkan ini
+        'pengurus_id', 
         'name',
         'slug',
         'type',
@@ -22,20 +22,20 @@ class UkmOrmawa extends Model
         'description_short',
         'description_full',
         'visi',
-        'misi', // Ini yang penting untuk casting
+        'misi', 
         'contact_email',
         'contact_instagram',
         'is_registration_open',
         'registration_deadline',
     ];
 
-    // Pastikan casting 'misi' => 'array' sudah benar
     protected $casts = [
-        'misi' => 'array', // Ini adalah kunci masalah Anda
+        'misi' => 'array', // Sudah benar
         'is_registration_open' => 'boolean',
-        'registration_deadline' => 'date',
+        'registration_deadline' => 'datetime', // Ganti ke datetime untuk Carbon object
     ];
 
+    // ... (boot method tetap sama) ...
     protected static function boot()
     {
         parent::boot();
@@ -45,8 +45,6 @@ class UkmOrmawa extends Model
             }
         });
         static::updating(function ($ukmOrmawa) {
-            // Hanya update slug jika nama berubah DAN slug lama kosong atau sama dengan slug dari nama lama
-            // Ini untuk mencegah slug yang sudah di-set manual ter überschreiben secara otomatis
             if ($ukmOrmawa->isDirty('name')) {
                 $originalSlug = Str::slug($ukmOrmawa->getOriginal('name'));
                 if (empty($ukmOrmawa->getOriginal('slug')) || $ukmOrmawa->getOriginal('slug') === $originalSlug) {
@@ -56,15 +54,18 @@ class UkmOrmawa extends Model
         });
     }
 
-    // Relasi ke Pendaftaran Anggota
     public function applications()
     {
         return $this->hasMany(UkmApplication::class, 'ukm_ormawa_id');
     }
 
-    // Anda bisa menambahkan relasi lain di sini jika perlu
     public function pengurus()
     {
         return $this->belongsTo(User::class, 'pengurus_id');
+    }
+
+    public function activities() // Tambahkan relasi ini jika belum ada
+    {
+        return $this->hasMany(Activity::class);
     }
 }

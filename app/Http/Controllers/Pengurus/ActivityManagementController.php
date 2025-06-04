@@ -5,55 +5,78 @@ namespace App\Http\Controllers\Pengurus;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use App\Models\UkmOrmawa; // Asumsi ada model Kegiatan
-use App\Models\Activity; // Anda perlu membuat model ini
-use Illuminate\Pagination\LengthAwarePaginator; // <-- TAMBAHKAN INI
-use Illuminate\Support\Collection; // <-- TAMBAHKAN INI (jika belum ada)
+use App\Models\Activity; // Pastikan Anda punya model Activity
+use App\Models\UkmOrmawa;
+use Carbon\Carbon;
+use Illuminate\Support\Facades\Storage; // Untuk menghapus gambar jika ada
+use Illuminate\Support\Str;           // Untuk slug jika diperlukan
 
 class ActivityManagementController extends Controller
 {
-    // Menampilkan daftar kegiatan
+    /**
+     * Display a listing of the resource.
+     */
     public function index(Request $request)
-{
-    $pengurus = Auth::user();
-    $ukmOrmawa = $pengurus->managesUkmOrmawa;
+    {
+        $pengurus = Auth::user();
+        $ukmOrmawa = $pengurus->managesUkmOrmawa;
 
-    if (!$ukmOrmawa) {
-        return redirect()->route('pengurus.dashboard')->with('error', 'Anda tidak terhubung dengan UKM/Ormawa.');
+        if (!$ukmOrmawa) {
+            return redirect()->route('pengurus.dashboard')->with('error', 'Anda tidak terhubung dengan UKM/Ormawa untuk mengelola kegiatan.');
+        }
+
+        $query = Activity::where('ukm_ormawa_id', $ukmOrmawa->id);
+
+        // Filter berdasarkan nama kegiatan
+        if ($request->filled('search_activity')) {
+            $query->where('name', 'like', '%' . $request->search_activity . '%');
+        }
+
+        // Filter berdasarkan status kegiatan (contoh sederhana)
+        if ($request->filled('filter_status_kegiatan')) {
+            $status = $request->filter_status_kegiatan;
+            if ($status === 'upcoming') {
+                $query->where('date_start', '>', now())->where('is_published', true);
+            } elseif ($status === 'ongoing') {
+                $query->where('date_start', '<=', now())->where(fn($q) => $q->whereNull('date_end')->orWhere('date_end', '>=', now()))->where('is_published', true);
+            } elseif ($status === 'finished') {
+                $query->whereNotNull('date_end')->where('date_end', '<', now())->where('is_published', true);
+            } elseif ($status === 'draft') {
+                $query->where('is_published', false);
+            } elseif ($status === 'published') {
+                $query->where('is_published', true);
+            }
+        }
+
+        $activities = $query->orderBy('date_start', 'desc')->paginate(10); // Paginasi
+
+        return view('pengurus.activities.index', compact('ukmOrmawa', 'activities'));
     }
 
-    // DATA CONTOH SEMENTARA DENGAN PAGINASI MANUAL
-    $allSampleActivities = new Collection([
-        (object)['id' => 1, 'name' => 'Workshop Fotografi Dasar', 'date_start' => now()->addDays(7), 'date_end' => now()->addDays(7), 'time_start' => '10:00', 'time_end' => '15:00', 'location' => 'Gedung A', 'type' => 'Workshop', 'is_published' => true],
-        (object)['id' => 2, 'name' => 'Lomba Desain Poster Nasional', 'date_start' => now()->addDays(14), 'date_end' => now()->addDays(20), 'time_start' => '08:00', 'time_end' => '17:00', 'location' => 'Online', 'type' => 'Lomba', 'is_published' => true],
-        (object)['id' => 3, 'name' => 'Pelatihan Kepemimpinan', 'date_start' => now()->subDays(5), 'date_end' => now()->subDays(4), 'time_start' => '09:00', 'time_end' => '16:00', 'location' => 'Aula', 'type' => 'Pelatihan', 'is_published' => false],
-        // Tambahkan lebih banyak data contoh jika perlu untuk menguji paginasi
-        (object)['id' => 4, 'name' => 'Seminar Karir', 'date_start' => now()->addDays(10), 'date_end' => now()->addDays(10), 'time_start' => '13:00', 'time_end' => '16:00', 'location' => 'Auditorium', 'type' => 'Seminar', 'is_published' => true],
-        (object)['id' => 5, 'name' => 'Gathering Anggota', 'date_start' => now()->addDays(5), 'date_end' => now()->addDays(5), 'time_start' => '18:00', 'time_end' => '21:00', 'location' => 'Taman Kampus', 'type' => 'Gathering', 'is_published' => true],
-    ]);
+    /**
+     * Show the form for creating a new resource.
+     */
+    public function create()
+    {
+        $pengurus = Auth::user();
+        $ukmOrmawa = $pengurus->managesUkmOrmawa;
 
-    $perPage = 5; // Jumlah item per halaman
-    $currentPage = $request->input('page', 1); // Ambil halaman saat ini dari request, default 1
-    $currentPageItems = $allSampleActivities->slice(($currentPage - 1) * $perPage, $perPage)->all();
-    
-    $activities = new LengthAwarePaginator(
-        $currentPageItems,
-        count($allSampleActivities),
-        $perPage,
-        $currentPage,
-        ['path' => $request->url(), 'query' => $request->query()]
-    );
+        if (!$ukmOrmawa) {
+            return redirect()->route('pengurus.dashboard')->with('error', 'Anda tidak terhubung dengan UKM/Ormawa untuk menambah kegiatan.');
+        }
+        return view('pengurus.activities.create', compact('ukmOrmawa'));
+    }
 
-    return view('pengurus.activities.index', compact('ukmOrmawa', 'activities'));
-}
-
-    // Menyimpan kegiatan baru
+    /**
+     * Store a newly created resource in storage.
+     */
     public function store(Request $request)
     {
         $pengurus = Auth::user();
         $ukmOrmawa = $pengurus->managesUkmOrmawa;
+
         if (!$ukmOrmawa) {
-            return back()->with('error', 'Aksi tidak diizinkan.');
+            return redirect()->route('pengurus.dashboard')->with('error', 'Tidak dapat menyimpan kegiatan.');
         }
 
         $validated = $request->validate([
@@ -61,86 +84,201 @@ class ActivityManagementController extends Controller
             'description' => 'required|string',
             'date_start' => 'required|date',
             'date_end' => 'nullable|date|after_or_equal:date_start',
-            'time_start' => 'required', // Anda bisa menggunakan tipe 'time' jika database mendukung
+            'time_start' => 'required', // Anda mungkin ingin validasi format waktu juga
             'time_end' => 'required',
             'location' => 'required|string|max:255',
-            'type' => 'required|string|max:100', // Misal: Workshop, Seminar, Lomba
+            'type' => 'required|string|max:255',
             'image_banner' => 'nullable|image|mimes:jpeg,png,jpg,gif,svg|max:4096',
             'is_published' => 'sometimes|boolean',
-            // Tambahkan field lain yang relevan (misal: biaya, link pendaftaran eksternal, dll)
         ]);
 
-        $dataToCreate = $validated;
-        $dataToCreate['ukm_ormawa_id'] = $ukmOrmawa->id; // Asosiasikan dengan UKM/Ormawa pengurus
-        $dataToCreate['user_id'] = $pengurus->id; // Pengurus yang membuat kegiatan
+        $dataToStore = $validated;
+        $dataToStore['ukm_ormawa_id'] = $ukmOrmawa->id;
+        $dataToStore['user_id'] = $pengurus->id; // User pengurus yang membuat
+        $dataToStore['is_published'] = $request->has('is_published');
 
         if ($request->hasFile('image_banner')) {
-            $dataToCreate['image_banner_url'] = $request->file('image_banner')->store('activity_banners', 'public');
+            $dataToStore['image_banner_url'] = $request->file('image_banner')->store('activity_banners', 'public');
         }
-        
-        $dataToCreate['is_published'] = $request->has('is_published');
 
-        // Activity::create($dataToCreate); // Ganti dengan model Anda
+        Activity::create($dataToStore);
 
-        return redirect()->route('pengurus.activities.index')->with('success', 'Kegiatan berhasil ditambahkan!');
+        return redirect()->route('pengurus.activities.index')->with('success', 'Kegiatan berhasil ditambahkan.');
     }
 
-    // Menampilkan form untuk mengedit kegiatan
-    public function edit(/*Activity $activity*/) // Ganti dengan model Anda
+    /**
+     * Show the form for editing the specified resource.
+     */
+    public function edit(Activity $activity)
     {
-        // DATA CONTOH SEMENTARA
-        $activity = (object)['id' => 1, 'name' => 'Workshop Fotografi Dasar', 'description' => 'Deskripsi workshop...', 'date_start' => now()->addDays(7)->format('Y-m-d'), 'date_end' => now()->addDays(7)->format('Y-m-d'), 'time_start' => '10:00', 'time_end' => '15:00', 'location' => 'Gedung A', 'type' => 'Workshop', 'is_published' => true, 'image_banner_url' => null];
-
         $pengurus = Auth::user();
         $ukmOrmawa = $pengurus->managesUkmOrmawa;
 
-        // Pastikan kegiatan ini milik UKM/Ormawa yang dikelola pengurus
-        // if (!$ukmOrmawa || $activity->ukm_ormawa_id !== $ukmOrmawa->id) {
-        //     return redirect()->route('pengurus.activities.index')->with('error', 'Kegiatan tidak ditemukan.');
-        // }
+        // Pastikan kegiatan ini milik UKM yang dikelola pengurus
+        if (!$ukmOrmawa || $activity->ukm_ormawa_id !== $ukmOrmawa->id) {
+            return redirect()->route('pengurus.activities.index')->with('error', 'Anda tidak berhak mengedit kegiatan ini.');
+        }
 
-        return view('pengurus.activities.edit', compact('ukmOrmawa', 'activity'));
+        return view('pengurus.activities.edit', compact('activity', 'ukmOrmawa'));
     }
 
-    // Memperbarui kegiatan yang sudah ada
-    public function update(Request $request, /*Activity $activity*/) // Ganti dengan model Anda
+    /**
+     * Update the specified resource in storage.
+     */
+    public function update(Request $request, Activity $activity)
     {
-        // DATA CONTOH SEMENTARA
-        $activity = (object)['id' => 1, 'name' => 'Workshop Fotografi Dasar', 'description' => 'Deskripsi workshop...', 'date_start' => now()->addDays(7), 'date_end' => now()->addDays(7), 'time_start' => '10:00', 'time_end' => '15:00', 'location' => 'Gedung A', 'type' => 'Workshop', 'is_published' => true, 'image_banner_url' => null];
-
         $pengurus = Auth::user();
         $ukmOrmawa = $pengurus->managesUkmOrmawa;
-        // if (!$ukmOrmawa || $activity->ukm_ormawa_id !== $ukmOrmawa->id) {
-        //     return back()->with('error', 'Aksi tidak diizinkan.');
-        // }
 
-        // Validasi mirip dengan store
-        // ...
-        
-        // Logika update
-        // ...
+        if (!$ukmOrmawa || $activity->ukm_ormawa_id !== $ukmOrmawa->id) {
+            return redirect()->route('pengurus.activities.index')->with('error', 'Anda tidak berhak mengupdate kegiatan ini.');
+        }
 
-        return redirect()->route('pengurus.activities.index')->with('success', 'Kegiatan berhasil diperbarui!');
+        $validated = $request->validate([
+            'name' => 'required|string|max:255',
+            'description' => 'required|string',
+            'date_start' => 'required|date',
+            'date_end' => 'nullable|date|after_or_equal:date_start',
+            'time_start' => 'required',
+            'time_end' => 'required',
+            'location' => 'required|string|max:255',
+            'type' => 'required|string|max:255',
+            'image_banner' => 'nullable|image|mimes:jpeg,png,jpg,gif,svg|max:4096',
+            'is_published' => 'sometimes|boolean',
+        ]);
+
+        $dataToUpdate = $validated;
+        $dataToUpdate['is_published'] = $request->has('is_published');
+
+        if ($request->hasFile('image_banner')) {
+            // Hapus gambar lama jika ada
+            if ($activity->image_banner_url && Storage::disk('public')->exists($activity->image_banner_url)) {
+                Storage::disk('public')->delete($activity->image_banner_url);
+            }
+            $dataToUpdate['image_banner_url'] = $request->file('image_banner')->store('activity_banners', 'public');
+        }
+
+        $activity->update($dataToUpdate);
+
+        return redirect()->route('pengurus.activities.index')->with('success', 'Kegiatan berhasil diperbarui.');
     }
 
-    // Menghapus kegiatan
-    public function destroy(/*Activity $activity*/) // Ganti dengan model Anda
+    /**
+     * Remove the specified resource from storage.
+     */
+    public function destroy(Activity $activity)
     {
-        // DATA CONTOH SEMENTARA
-        $activity = (object)['id' => 1, 'name' => 'Workshop Fotografi Dasar'];
-
         $pengurus = Auth::user();
         $ukmOrmawa = $pengurus->managesUkmOrmawa;
-        // if (!$ukmOrmawa || $activity->ukm_ormawa_id !== $ukmOrmawa->id) {
-        //     return back()->with('error', 'Aksi tidak diizinkan.');
-        // }
+
+        if (!$ukmOrmawa || $activity->ukm_ormawa_id !== $ukmOrmawa->id) {
+            return redirect()->route('pengurus.activities.index')->with('error', 'Anda tidak berhak menghapus kegiatan ini.');
+        }
 
         // Hapus gambar terkait jika ada
-        // if ($activity->image_banner_url && Storage::disk('public')->exists($activity->image_banner_url)) {
-        //     Storage::disk('public')->delete($activity->image_banner_url);
-        // }
-        // $activity->delete();
+        if ($activity->image_banner_url && Storage::disk('public')->exists($activity->image_banner_url)) {
+            Storage::disk('public')->delete($activity->image_banner_url);
+        }
 
-        return redirect()->route('pengurus.activities.index')->with('success', 'Kegiatan berhasil dihapus!');
+        $activity->delete();
+
+        return redirect()->route('pengurus.activities.index')->with('success', 'Kegiatan berhasil dihapus.');
+    }
+    
+    // Method attendanceReport yang sudah ada
+    public function attendanceReport(Request $request)
+    {
+        $pengurus = Auth::user();
+        $ukmOrmawa = $pengurus->managesUkmOrmawa;
+
+        if (!$ukmOrmawa) {
+            return redirect()->route('pengurus.dashboard')->with('error', 'Anda tidak terhubung dengan UKM/Ormawa.');
+        }
+        
+        // DATA CONTOH SEMENTARA untuk kegiatan yang bisa dipilih
+        // Idealnya ini diambil dari database, kegiatan yang sudah selesai dan milik UKM ini
+        // $completedActivities = Activity::where('ukm_ormawa_id', $ukmOrmawa->id)
+        //                                ->where('date_end', '<', now()) // Asumsi date_end menandakan selesai
+        //                                ->orderBy('date_start', 'desc')
+        //                                ->get();
+
+        $completedActivities = collect([
+            (object)['id' => 1, 'name' => 'Workshop Fotografi Dasar (Selesai) - ' . $ukmOrmawa->name],
+            (object)['id' => 3, 'name' => 'Pelatihan Kepemimpinan (Selesai) - ' . $ukmOrmawa->name],
+        ]);
+
+
+        $selectedActivityId = $request->input('activity_id');
+        $reportData = collect(); 
+        $reportType = null; 
+        $activityName = null;
+        
+        if ($selectedActivityId) {
+            $reportType = 'single_activity';
+            $selectedActivity = $completedActivities->firstWhere('id', (int)$selectedActivityId);
+            $activityName = $selectedActivity ? $selectedActivity->name : 'Kegiatan Tidak Ditemukan';
+
+            // DATA CONTOH untuk laporan per kegiatan
+            // Anda akan mengganti ini dengan query ke tabel ActivityAttendance
+            if($selectedActivityId == 1){
+                 $items = collect([
+                    (object)['user' => (object)['name' => 'Budi Santoso', 'nim' => '102022300010'], 'status' => 'Hadir', 'notes' => '-'],
+                    (object)['user' => (object)['name' => 'Citra Lestari', 'nim' => '102022300011'], 'status' => 'Absen', 'notes' => 'Tanpa keterangan'],
+                    (object)['user' => (object)['name' => 'Ahmad Yani', 'nim' => '102022300012'], 'status' => 'Izin', 'notes' => 'Sakit'],
+                    (object)['user' => (object)['name' => 'Dewi Anggraini', 'nim' => '102022300013'], 'status' => 'Hadir', 'notes' => '-'],
+                ]);
+            } elseif ($selectedActivityId == 3) {
+                 $items = collect([
+                    (object)['user' => (object)['name' => 'Eko Prasetyo', 'nim' => '102022300014'], 'status' => 'Hadir', 'notes' => '-'],
+                    (object)['user' => (object)['name' => 'Fitri Indah', 'nim' => '102022300015'], 'status' => 'Hadir', 'notes' => '-'],
+                ]);
+            } else {
+                $items = collect();
+            }
+             $reportData = new \Illuminate\Pagination\LengthAwarePaginator(
+                $items->forPage($request->page, 10),
+                $items->count(),
+                10,
+                $request->page,
+                ['path' => $request->url(), 'query' => $request->query()]
+            );
+
+
+        } else {
+            $reportType = 'overall_summary';
+            // DATA CONTOH untuk rekap umum dari SEMUA anggota UKM yang terdaftar (status 'approved')
+            $approvedMembers = UkmApplication::where('ukm_ormawa_id', $ukmOrmawa->id)
+                                            ->where('status', 'approved')
+                                            ->with('user') // Eager load user
+                                            ->get();
+            $items = collect();
+            if($approvedMembers->isNotEmpty()){
+                 $items = $approvedMembers->map(function($application) {
+                    // Logika dummy untuk jumlah kegiatan diikuti, hadir, absen
+                    $kegiatan_diikuti = rand(3, 7);
+                    $jumlah_hadir = rand(1, $kegiatan_diikuti);
+                    $jumlah_absen = $kegiatan_diikuti - $jumlah_hadir;
+                    $persentase_kehadiran = $kegiatan_diikuti > 0 ? round(($jumlah_hadir / $kegiatan_diikuti) * 100) . '%' : '0%';
+                    return (object)[
+                        'user' => $application->user, // Menggunakan data user asli
+                        'kegiatan_diikuti' => $kegiatan_diikuti,
+                        'jumlah_hadir' => $jumlah_hadir,
+                        'jumlah_absen' => $jumlah_absen,
+                        'persentase_kehadiran' => $persentase_kehadiran
+                    ];
+                });
+            }
+
+             $reportData = new \Illuminate\Pagination\LengthAwarePaginator(
+                $items->forPage($request->page, 10),
+                $items->count(),
+                10,
+                $request->page,
+                ['path' => $request->url(), 'query' => $request->query()]
+            );
+        }
+
+
+        return view('pengurus.attandance.index', compact('ukmOrmawa', 'completedActivities', 'reportData', 'selectedActivityId', 'reportType', 'activityName'));
     }
 }

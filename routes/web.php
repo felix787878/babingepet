@@ -14,6 +14,7 @@ use App\Http\Controllers\UkmOrmawaRegistrationController;
 use App\Http\Controllers\Pengurus\PengurusDashboardController;
 use App\Http\Controllers\Pengurus\ManagedUkmOrmawaController; // Tambahkan ini di atas
 use App\Http\Controllers\Pengurus\MemberManagementController; // <--- TAMBAHKAN INI
+use App\Http\Controllers\Pengurus\ActivityManagementController;
 
 
 
@@ -78,8 +79,8 @@ Route::middleware(['auth', 'role:pengurus'])->prefix('pengurus')->name('pengurus
     Route::get('/members/{application}/show', [MemberManagementController::class, 'showApplication'])->name('members.show');
     Route::patch('/members/{application}/status', [MemberManagementController::class, 'updateStatus'])->name('members.updateStatus');
     // -------------------------------------------
-    Route::resource('activities', App\Http\Controllers\Pengurus\ActivityManagementController::class)->except(['show']); // 'show' publik mungkin berbeda
-// Jika Anda ingin method 'show' khusus untuk pengurus:
-// Route::get('activities/{activity}', [App\Http\Controllers\Pengurus\ActivityManagementController::class, 'show'])->name('activities.show');
+    Route::resource('activities', ActivityManagementController::class)->except(['show']); // 'show' publik mungkin berbeda
+    Route::get('/attendance-reports', [ActivityManagementController::class, 'attendanceReport'])->name('attendance.reports');
+
 });
 

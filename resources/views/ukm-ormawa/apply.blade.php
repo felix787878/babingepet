@@ -4,26 +4,29 @@
 <div class="container mx-auto">
     {{-- Tombol Kembali --}}
     <div class="mb-6">
-        <a href="{{ url()->previous() }}" class="inline-flex items-center text-blue-600 hover:text-blue-800 transition-colors group">
+        <a href="{{ url()->previous() != url()->current() ? url()->previous() : route('ukm-ormawa.show', ['slug' => $item->slug]) }}" class="inline-flex items-center text-blue-600 hover:text-blue-800 transition-colors group text-sm font-medium">
             <span class="material-icons mr-1.5 group-hover:-translate-x-1 transition-transform">arrow_back</span>
-            Kembali
+            Kembali ke Detail {{ $item->name }}
         </a>
     </div>
 
     <div class="bg-white p-6 md:p-8 rounded-xl shadow-xl max-w-2xl mx-auto">
         <div class="text-center mb-8">
-            @if(isset($item->logo_url))
-            <img src="{{ $item->logo_url }}" alt="Logo {{ $item->name }}" class="w-28 h-28 object-contain mx-auto mb-4 rounded-lg shadow-md">
+            @if(isset($item->logo_url) && $item->logo_url)
+            <img src="{{ asset('storage/' . $item->logo_url) }}" alt="Logo {{ $item->name }}" class="w-28 h-28 object-contain mx-auto mb-4 rounded-lg shadow-md border border-gray-200">
             @else
             <span class="material-icons text-7xl text-gray-300 mx-auto mb-4">groups</span>
             @endif
             <h1 class="text-2xl md:text-3xl font-bold text-gray-800">Formulir Pendaftaran</h1>
             <p class="text-xl text-red-600 font-semibold mt-1">{{ $item->name }}</p>
             <p class="text-sm text-gray-500 mt-2">Lengkapi data di bawah ini dengan cermat untuk bergabung.</p>
+            @if($item->registration_deadline)
+                <p class="text-sm text-red-500 mt-1 font-medium">Batas akhir pendaftaran: {{ $item->registration_deadline->translatedFormat('d F Y') }}</p>
+            @endif
         </div>
 
         @if ($errors->any())
-            <div class="mb-6 p-4 rounded-md bg-red-50 border border-red-200 text-red-700 text-sm">
+            <div class="mb-6 p-4 rounded-md bg-red-100 border border-red-200 text-red-700 text-sm">
                 <p class="font-semibold mb-2 text-red-800">Oops! Ada beberapa hal yang perlu diperbaiki:</p>
                 <ul class="list-disc list-inside pl-4">
                     @foreach ($errors->all() as $error)
@@ -62,7 +65,7 @@
                 <div class="mt-6 pt-4 border-t border-gray-100">
                      <div class="flex items-start">
                          <div class="flex items-center h-5">
-                             <input id="commitment_checkbox" name="commitment_checkbox" type="checkbox" value="1" {{ old('commitment_checkbox') ? 'checked' : '' }} required class="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300 rounded @error('commitment_checkbox') border-red-500 @enderror">
+                             <input id="commitment_checkbox" name="commitment_checkbox" type="checkbox" value="1" {{ old('commitment_checkbox') ? 'checked' : '' }} required class="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300 rounded @error('commitment_checkbox') border-red-500 ring-red-500 @enderror">
                          </div>
                          <div class="ml-3 text-sm">
                              <label for="commitment_checkbox" class="font-medium text-gray-700">Pernyataan Komitmen <span class="text-red-500">*</span></label>
