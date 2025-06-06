@@ -25,6 +25,12 @@ class UkmOrmawa extends Model
         'misi', 
         'contact_email',
         'contact_instagram',
+        'alamat_lengkap',
+        'provinsi',
+        'kabkota',
+        'kecamatan',
+        'desakel',
+        'Maps_link',
         'is_registration_open',
         'registration_deadline',
     ];

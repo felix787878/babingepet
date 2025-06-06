@@ -99,6 +99,38 @@
                                 </div>
                             </div>
                         </div>
+                        {{-- Bagian Lokasi dengan Pencarian API --}}
+                        <div class="mb-8 p-6 bg-gray-50 rounded-lg shadow-inner">
+                            <h3 class="text-lg font-semibold text-gray-800 mb-4">Lokasi UKM/Ormawa</h3>
+
+                            {{-- Input untuk Pencarian Alamat --}}
+                            <div class="mt-4">
+                                <label for="location_search" class="block font-medium text-sm text-gray-700">Cari Alamat (Ketik Nama Kecamatan/Desa)</label>
+                                <div class="relative">
+                                    <input id="location_search" class="block mt-1 w-full rounded-md shadow-sm border-gray-300 focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" type="text" name="alamat_lengkap" value="{{ old('alamat_lengkap', $ukmOrmawa->alamat_lengkap ?? '') }}" placeholder="Contoh: Soreang" autocomplete="off" />
+                                    <div id="search-spinner" class="absolute top-1/2 right-3 transform -translate-y-1/2 hidden">
+                                        <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-gray-900"></div>
+                                    </div>
+                                </div>
+                                <div id="search-results" class="mt-2 border border-gray-300 rounded-md bg-white shadow-lg max-h-60 overflow-y-auto hidden">
+                                    {{-- Hasil pencarian API akan ditampilkan di sini --}}
+                                </div>
+                                @error('alamat_lengkap') <p class="text-sm text-red-600 mt-2">{{ $message }}</p> @enderror
+                            </div>
+
+                            {{-- Hidden Inputs untuk menyimpan data terstruktur --}}
+                            <input type="hidden" name="provinsi" id="provinsi" value="{{ old('provinsi', $ukmOrmawa->provinsi ?? '') }}">
+                            <input type="hidden" name="kabkota" id="kabkota" value="{{ old('kabkota', $ukmOrmawa->kabkota ?? '') }}">
+                            <input type="hidden" name="kecamatan" id="kecamatan" value="{{ old('kecamatan', $ukmOrmawa->kecamatan ?? '') }}">
+                            <input type="hidden" name="desakel" id="desakel" value="{{ old('desakel', $ukmOrmawa->desakel ?? '') }}">
+                            
+                            {{-- Input untuk Google Maps Link (tetap sama) --}}
+                            <div class="mt-6">
+                                <label for="Maps_link" class="block font-medium text-sm text-gray-700">Link Google Maps (Opsional)</label>
+                                <input id="Maps_link" class="block mt-1 w-full rounded-md shadow-sm border-gray-300 focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" type="url" name="Maps_link" value="{{ old('Maps_link', $ukmOrmawa->Maps_link ?? '') }}" placeholder="Contoh: https://maps.app.goo.gl/contohlink123" />
+                                @error('Maps_link') <p class="text-sm text-red-600 mt-2">{{ $message }}</p> @enderror
+                            </div>
+                        </div>
 
                         {{-- Bagian Gambar --}}
                         <div class="mb-8 p-6 bg-gray-50 rounded-lg shadow-inner">
@@ -223,6 +255,87 @@
                 // document.getElementById('bannerPreview').src = '#'; // Placeholder
             }
         });
+        // Script untuk API alamat
+        document.addEventListener('DOMContentLoaded', function() {
+        const searchInput = document.getElementById('location_search');
+        const resultsContainer = document.getElementById('search-results');
+        const spinner = document.getElementById('search-spinner');
+
+        // Hidden fields
+        const provinsiInput = document.getElementById('provinsi');
+        const kabkotaInput = document.getElementById('kabkota');
+        const kecamatanInput = document.getElementById('kecamatan');
+        const desakelInput = document.getElementById('desakel');
+        
+        // Fungsi Debounce untuk mencegah request API pada setiap ketikan
+        // Hanya akan menjalankan request setelah pengguna berhenti mengetik selama 'delay'
+        const debounce = (func, delay) => {
+            let timeout;
+            return function(...args) {
+                clearTimeout(timeout);
+                timeout = setTimeout(() => func.apply(this, args), delay);
+            };
+        };
+
+        // Fungsi untuk memanggil API
+        const fetchAddress = async (keyword) => {
+            if (keyword.length < 3) {
+                resultsContainer.innerHTML = '';
+                resultsContainer.classList.add('hidden');
+                return;
+            }
+
+            spinner.classList.remove('hidden');
+            resultsContainer.classList.remove('hidden');
+            resultsContainer.innerHTML = '<div class="p-3 text-sm text-gray-500">Mencari...</div>';
+
+            try {
+                const response = await fetch(`https://alamat.thecloudalert.com/api/cari/index/?keyword=${keyword}`);
+                const data = await response.json();
+
+                spinner.classList.add('hidden');
+                resultsContainer.innerHTML = ''; // Kosongkan hasil sebelumnya
+
+                if (data.status === 200 && data.result.length > 0) {
+                    data.result.forEach(item => {
+                        const resultItem = document.createElement('div');
+                        resultItem.className = 'p-3 hover:bg-indigo-50 cursor-pointer border-b border-gray-200 text-sm';
+                        
+                        // Format tampilan alamat
+                        let displayAddress = `${item.desakel}, ${item.kecamatan}, ${item.kabkota}, ${item.provinsi}`;
+                        resultItem.textContent = displayAddress;
+
+                        // Tambahkan event listener saat salah satu hasil diklik
+                        resultItem.addEventListener('click', () => {
+                            // Isi input pencarian dengan alamat lengkap
+                            searchInput.value = displayAddress;
+
+                            // Isi hidden fields dengan data terstruktur
+                            provinsiInput.value = item.provinsi;
+                            kabkotaInput.value = item.kabkota;
+                            kecamatanInput.value = item.kecamatan;
+                            desakelInput.value = item.desakel;
+
+                            // Sembunyikan container hasil
+                            resultsContainer.classList.add('hidden');
+                        });
+                        resultsContainer.appendChild(resultItem);
+                    });
+                } else {
+                    resultsContainer.innerHTML = '<div class="p-3 text-sm text-gray-500">Alamat tidak ditemukan.</div>';
+                }
+            } catch (error) {
+                spinner.classList.add('hidden');
+                resultsContainer.innerHTML = '<div class="p-3 text-sm text-red-500">Terjadi kesalahan saat memuat data.</div>';
+                console.error('API Fetch Error:', error);
+            }
+        };
+
+        // Terapkan debounce pada event listener input
+        searchInput.addEventListener('keyup', debounce((e) => {
+            fetchAddress(e.target.value);
+        }, 500)); // Delay 500ms
+    });
     </script>
     @endpush
 </x-pengurus-app-layout>
