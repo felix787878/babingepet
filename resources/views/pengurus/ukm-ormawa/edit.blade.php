@@ -267,8 +267,6 @@
         const kecamatanInput = document.getElementById('kecamatan');
         const desakelInput = document.getElementById('desakel');
         
-        // Fungsi Debounce untuk mencegah request API pada setiap ketikan
-        // Hanya akan menjalankan request setelah pengguna berhenti mengetik selama 'delay'
         const debounce = (func, delay) => {
             let timeout;
             return function(...args) {
@@ -277,7 +275,6 @@
             };
         };
 
-        // Fungsi untuk memanggil API
         const fetchAddress = async (keyword) => {
             if (keyword.length < 3) {
                 resultsContainer.innerHTML = '';
@@ -294,33 +291,55 @@
                 const data = await response.json();
 
                 spinner.classList.add('hidden');
-                resultsContainer.innerHTML = ''; // Kosongkan hasil sebelumnya
+                resultsContainer.innerHTML = ''; 
 
                 if (data.status === 200 && data.result.length > 0) {
+                    
+                    // =================================================================
+                    // BAGIAN BARU: Filter duplikat sebelum ditampilkan
+                    // =================================================================
+                    const uniqueResults = [];
+                    const trackedKeys = new Set(); // Menggunakan Set untuk performa yang lebih baik
+
                     data.result.forEach(item => {
+                        // Membuat kunci unik dari kombinasi alamat
+                        const key = `${item.desakel}|${item.kecamatan}|${item.kabkota}|${item.provinsi}`;
+                        
+                        // Jika kunci ini belum pernah ada, tambahkan ke hasil unik
+                        if (!trackedKeys.has(key)) {
+                            trackedKeys.add(key);
+                            uniqueResults.push(item);
+                        }
+                    });
+                    // =================================================================
+                    // AKHIR BAGIAN BARU
+                    // =================================================================
+
+                    // Cek jika ada hasil setelah difilter
+                    if(uniqueResults.length === 0) {
+                        resultsContainer.innerHTML = '<div class="p-3 text-sm text-gray-500">Alamat tidak ditemukan.</div>';
+                        return;
+                    }
+
+                    // Gunakan hasil yang sudah unik (uniqueResults) untuk ditampilkan
+                    uniqueResults.forEach(item => {
                         const resultItem = document.createElement('div');
                         resultItem.className = 'p-3 hover:bg-indigo-50 cursor-pointer border-b border-gray-200 text-sm';
                         
-                        // Format tampilan alamat
                         let displayAddress = `${item.desakel}, ${item.kecamatan}, ${item.kabkota}, ${item.provinsi}`;
                         resultItem.textContent = displayAddress;
 
-                        // Tambahkan event listener saat salah satu hasil diklik
                         resultItem.addEventListener('click', () => {
-                            // Isi input pencarian dengan alamat lengkap
                             searchInput.value = displayAddress;
-
-                            // Isi hidden fields dengan data terstruktur
                             provinsiInput.value = item.provinsi;
                             kabkotaInput.value = item.kabkota;
                             kecamatanInput.value = item.kecamatan;
                             desakelInput.value = item.desakel;
-
-                            // Sembunyikan container hasil
                             resultsContainer.classList.add('hidden');
                         });
                         resultsContainer.appendChild(resultItem);
                     });
+
                 } else {
                     resultsContainer.innerHTML = '<div class="p-3 text-sm text-gray-500">Alamat tidak ditemukan.</div>';
                 }
